@@ -1,0 +1,23 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[[package]]
+name = "moondshine-rtf-exp-to-better-format"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "striprtf" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "striprtf", specifier = ">=0.0.29" }]
+
+[[package]]
+name = "striprtf"
+version = "0.0.29"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/86/7154b7c625a3ff704581dab70c05389e1de90233b7a751f79f712c2ca0e9/striprtf-0.0.29.tar.gz", hash = "sha256:5a822d075e17417934ed3add6fc79b5fc8fb544fe4370b2f894cdd28f0ddd78e", size = 7533, upload-time = "2025-03-27T22:55:56.874Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/3e/1418afacc4aae04690cff282078f22620c89a99490499878ececc3021654/striprtf-0.0.29-py3-none-any.whl", hash = "sha256:0fc6a41999d015358d19627776b616424dd501ad698105c81d76734d1e14d91b", size = 7879, upload-time = "2025-03-27T22:55:55.977Z" },
+]
