@@ -6,8 +6,30 @@ dist/
 wheels/
 *.egg-info
 
+.DS_Store
+*.log
+*.tmp
+*.bak
+
 # Virtual environments
 .venv
 
 transcripts/*
-output/*
+!transcripts/README.md
+
+output/_OLD/*
+
+output/raw_files/*
+!output/raw_files/README.md
+
+output/cleaned_files/*
+!output/cleaned_files/README.md
+
+output/named_files/*
+!output/named_files/README.md
+
+output/extracted_files/*
+!output/extracted_files/README.md
+
+output/final_summaries/*
+!output/final_summaries/README.md
