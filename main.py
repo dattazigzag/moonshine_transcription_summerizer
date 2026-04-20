@@ -47,25 +47,19 @@ def main():
         default=ollama_host,
         help="Ollama host URL",
     )
-
+    
     # Model Selection Options
     parser.add_argument(
-        "--cleanup-model",
+        "--editor-model",
         type=str,
         default="gemma4:26b",
-        help="Model for Step 2: Cleanup",
+        help="Model used for Cleanup (Step 2) and Formatting (Step 5)",
     )
     parser.add_argument(
-        "--extract-model",
+        "--extractor-model",
         type=str,
-        default="gemma4:26b",
-        help="Model for Step 4: Extraction",
-    )
-    parser.add_argument(
-        "--format-model",
-        type=str,
-        default="gemma4:26b",
-        help="Model for Step 5: Formatting",
+        default="qwen3.5:27b",
+        help="Model used for Information Extraction (Step 4)",
     )
 
     args = parser.parse_args()
@@ -90,26 +84,26 @@ def main():
         print("\n[1/5] Parsing RTF to Markdown...")
         _, md_path = convert(args.input_rtf, dir_raw)
 
-        # Step 2: Cleanup
-        print(f"\n[2/5] Cleaning transcript using {args.cleanup_model}...")
+        # Step 2: Cleanup (Uses Editor Model)
+        print(f"\n[2/5] Cleaning transcript using {args.editor_model}...")
         cleaned_path = clean_transcript(
-            md_path, dir_cleaned, args.cleanup_model, args.host
+            md_path, dir_cleaned, args.editor_model, args.host
         )
 
         # Step 3: Human-in-the-Loop Mapping
         print("\n[3/5] Human-in-the-loop Speaker Mapping...")
         named_path = map_speakers(cleaned_path, dir_named)
 
-        # Step 4: Extraction
-        print(f"\n[4/5] Extracting intelligence using {args.extract_model}...")
+        # Step 4: Extraction (Uses Extractor Model)
+        print(f"\n[4/5] Extracting intelligence using {args.extractor_model}...")
         extracted_path = extract_information(
-            named_path, dir_extracted, args.extract_model, args.host
+            named_path, dir_extracted, args.extractor_model, args.host
         )
 
-        # Step 5: Formatting
-        print(f"\n[5/5] Formatting final summary using {args.format_model}...")
+        # Step 5: Formatting (Uses Editor Model)
+        print(f"\n[5/5] Formatting final summary using {args.editor_model}...")
         final_path = format_summary(
-            extracted_path, dir_final, args.format_model, args.host
+            extracted_path, dir_final, args.editor_model, args.host
         )
 
         print("-" * 40)
