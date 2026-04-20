@@ -12,7 +12,7 @@ from ollama import Client, ResponseError
 
 # --- Global Configurations ---
 # Change to "qwen2.5:27b" or your specific tag
-DEFAULT_MODEL = "gemma2:27b"
+DEFAULT_MODEL = "gemma4:26b"
 # Notice that for the official client, you only provide the base host URL, not the /api/chat endpoint
 DEFAULT_HOST = "http://192.168.178.160:11434"
 
