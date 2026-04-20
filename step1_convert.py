@@ -3,7 +3,7 @@
 Convert a moonshine.ai RTF transcript into JSON + Markdown.
 
 Usage:
-    uv run main.py input.rtf [--out-dir .]
+    uv run step1_convert.py input.rtf [--out-dir .]
 
 Dependencies:
     striprtf  (pure-python, no native deps)

@@ -52,7 +52,7 @@ During the development of this pipeline, several critical discoveries shaped the
 Strips noisy .rtf formatting and groups consecutive speech into clean Markdown and JSON (_not used in further processing currently_).
 
 ```bash
-uv run 01_convert_rtf.py transcripts/<MeetingTranscript>.rtf --out-dir output/raw_files/
+uv run step1_convert.py transcripts/<MeetingTranscript>.rtf --out-dir output/raw_files/
 ```
 
 ### Step 2: Agent 1 - Transcript Cleanup
@@ -62,7 +62,7 @@ The LLM acts as a **Data Cleaner**.
 It proofreads the raw markdown, removes verbal stutters, false starts, and filler words without summarizing or losing chronological context.
 
 ```bash
-uv run 02_agent1_cleanup.py output/raw_files/<MeetingTranscript>.md --out-dir output/cleaned_files/
+uv run step2_cleanup.py output/raw_files/<MeetingTranscript>.md --out-dir output/cleaned_files/
 ```
 
 ### Step 3: Speaker Mapping (Human-in-the-Loop)
@@ -72,7 +72,7 @@ A quick CLI script that scans for `Speaker X:` tags and pauses to ask you for th
 It then performs a global find-and-replace, ensuring 100% accurate attribution for the subsequent AI steps.
 
 ```bash
-uv run 03_speaker_mapping.py output/cleaned_files/<MeetingTranscript_cleaned>.md --out-dir output/named_files/
+uv run step3_mapping.py output/cleaned_files/<MeetingTranscript_cleaned>.md --out-dir output/named_files/
 ```
 
 ### Step 4: Agent 2 - Information Extraction
@@ -82,7 +82,7 @@ The LLM acts as a **Data Harvester**.
 It scans the named transcript and extracts exhaustive, high-fidelity bullet points, organizing them into logical H3 sub-categories while preserving specific metrics, dates, and brands.
 
 ```bash
-uv run 04_agent2_extraction.py output/named_files/<MeetingTranscript_named>.md --out-dir output/extracted_files/
+uv run step4_extraction.py output/named_files/<MeetingTranscript_named>.md --out-dir output/extracted_files/
 ```
 
 ### Step 5: Agent 3 - Final Formatting
@@ -92,7 +92,7 @@ The LLM acts as the **Publisher**.
 It takes the dense extraction and formats it into a professional layout, generating a "Participants" list and organizing Action Items into a strict Markdown table `(Task | Owner | Status)`.
 
 ```bash
-uv run 05_agent3_formatter.py output/extracted_files/<MeetingTranscript_extracted>.md --out-dir output/final_summaries/
+uv run step5_formatter.py output/extracted_files/<MeetingTranscript_extracted>.md --out-dir output/final_summaries/
 ```
 
 ---
@@ -113,17 +113,17 @@ You can leverage this by switching the `--model` argument at each step:
 
 ```bash
 # Step 2: Use Gemma for natural, grammatical text cleanup
-uv run 02_agent1_cleanup.py output/raw_files/Meeting.md \
+uv run step2_cleanup.py output/raw_files/Meeting.md \
     --out-dir output/cleaned_files/ \
     --model gemma4:26b
 
 # Step 4: Switch to Qwen for rigid, exhaustive data extraction
-uv run 04_agent2_extraction.py output/named_files/Meeting_named.md \
+uv run step4_extraction.py output/named_files/Meeting_named.md \
     --out-dir output/extracted_files/ \
     --model qwen3.5:27b
 
 # Step 5: Switch back to Gemma for polished, corporate document formatting
-uv run 05_agent3_formatter.py output/extracted_files/Meeting_extracted.md \
+uv run step5_formatter.py output/extracted_files/Meeting_extracted.md \
     --out-dir output/final_summaries/ \
     --model gemma4:26b
 ```
@@ -133,7 +133,7 @@ uv run 05_agent3_formatter.py output/extracted_files/Meeting_extracted.md \
 If you are running Ollama on a dedicated home server, a secondary GPU rig, or within a specific Docker network, you can override the default local URL using the `--host` flag:
 
 ```bash
-uv run 02_agent1_cleanup.py input.md --host http://<your_ollama_host_ADDR>:<your_ollama_host_PORT>
+uv run step2_cleanup.py input.md --host http://<your_ollama_host_ADDR>:<your_ollama_host_PORT>
 ```
 
 ### Batch Processing and Chaining
@@ -145,11 +145,11 @@ Because every step in this pipeline is an isolated CLI command with distinct inp
 
 ```txt
 .
-├── 01_convert_rtf.py
-├── 02_agent1_cleanup.py
-├── 03_speaker_mapping.py
-├── 04_agent2_extraction.py
-├── 05_agent3_formatter.py
+├── step1_convert.py
+├── step2_cleanup.py
+├── step3_mapping.py
+├── step4_extraction.py
+├── step5_formatter.py
 ├── output
 │   ├── cleaned_files
 │   │   └── README.md
