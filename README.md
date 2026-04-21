@@ -49,6 +49,59 @@ During the development of this pipeline, several critical discoveries shaped the
 
 ## The 5-Step Pipeline Workflow
 
+## Pipeline Architecture
+
+```mermaid
+graph TD
+    subgraph Input
+        RTF[Raw .rtf Transcript]
+    end
+
+    subgraph "Master Orchestrator (main.py)"
+        S1[Step 1: Parse RTF<br/><i>step1_convert.py</i>]
+        S2[Step 2: Cleanup<br/><i>step2_cleanup.py</i>]
+        S3[Step 3: Speaker Mapping<br/><i>step3_mapping.py</i>]
+        S4[Step 4: Extraction<br/><i>step4_extraction.py</i>]
+        S5[Step 5: Formatting<br/><i>step5_formatter.py</i>]
+        VRAM[Eject Models from VRAM]
+    end
+
+    subgraph "Local Infrastructure"
+        OLLAMA[(Ollama API<br/>Local GPU/RAM)]
+        USER((You))
+    end
+
+    subgraph Output
+        FINAL[Polished Meeting Minutes<br/><i>.md File</i>]
+    end
+
+    %% Flow Execution
+    RTF --> S1
+    S1 -- "Raw MD" --> S2
+    S2 -- "Cleaned MD" --> S3
+    S3 -- "Named MD" --> S4
+    S4 -- "Extracted MD" --> S5
+    S5 -- "Formatted MD" --> FINAL
+    FINAL --> VRAM
+
+    %% Ollama & Human Interactions
+    S2 <-->|"Editor Model (keep_alive=-1)"| OLLAMA
+    USER -.->|"Inputs Real Names via CLI"| S3
+    S4 <-->|"Extractor Model (keep_alive=-1)"| OLLAMA
+    S5 <-->|"Editor Model (keep_alive=-1)"| OLLAMA
+    
+    %% VRAM Release
+    VRAM -.->|"keep_alive=0"| OLLAMA
+
+    classDef script fill:#2d3436,stroke:#74b9ff,stroke-width:2px,color:#fff;
+    classDef input output fill:#00b894,stroke:#000,stroke-width:1px,color:#fff;
+    classDef infra fill:#0984e3,stroke:#000,stroke-width:1px,color:#fff;
+    
+    class S1,S2,S3,S4,S5,VRAM script;
+    class RTF,FINAL input;
+    class OLLAMA infra;
+```
+
 ### Step 1: Parse RTF to Markdown (Non-LLM)
 
 Strips noisy .rtf formatting and groups consecutive speech into clean Markdown and JSON (_not used in further processing currently_).
