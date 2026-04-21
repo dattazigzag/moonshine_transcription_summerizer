@@ -1079,6 +1079,12 @@ def summarize_transcript(
     for m in models_used:
         _ALL_MODELS_EVER_LOADED.add((host, m))
 
+    # Terminal banner so CLI operators watching `uv run app.py` see a
+    # clear start / end for each MCP call. Mirrors main.py's
+    # "Starting Pipeline for: ..." line.
+    print(f"\n🔨 MCP summarize_transcript: {input_path.name}")
+    print("-" * 40)
+
     try:
         # ── Step 1/5: ingest ──────────────────────────────────────────────────
         announce(1, 5, "Ingesting transcript to Markdown")
@@ -1127,7 +1133,15 @@ def summarize_transcript(
             extracted_path, tempdir / "final", extractor_model, host
         )
 
-        return final_path.read_text(encoding="utf-8")
+        final_text = final_path.read_text(encoding="utf-8")
+
+        # Closing banner — CLI parity with main.py's "Pipeline Complete".
+        print("-" * 40)
+        print(
+            f"✅ Summary ready ({len(final_text):,} chars). "
+            f"Returning to MCP client."
+        )
+        return final_text
 
     except ValueError:
         # Pre-flight / bad-file errors already carry the right type —
@@ -1143,9 +1157,15 @@ def summarize_transcript(
     finally:
         # Eject models on every exit path — success, raise, or cancel.
         # unload_model swallows transport errors so this never masks
-        # the real exception.
+        # the real exception. Print each attempt so CLI operators see
+        # the cleanup happen (mirrors main.py's unload confirmations).
+        print("\nEjecting models from VRAM...")
         for m in models_used:
-            unload_model(host, m)
+            try:
+                unload_model(host, m)
+                print(f"  - Successfully unloaded: {m}")
+            except Exception as e:
+                print(f"  - Note: could not confirm unload for {m}: {e}")
         shutil.rmtree(tempdir, ignore_errors=True)
 
 
