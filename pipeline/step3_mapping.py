@@ -3,12 +3,21 @@
 Step 3: Speaker Mapping (Human-in-the-Loop)
 Finds generic speaker tags in a cleaned transcript, prompts the user
 for their real names, and outputs a newly named markdown file.
+
+The detection and application primitives (`detect_generic_speakers`,
+`apply_speaker_mapping`) are exposed separately so the Gradio web UI
+can reuse them without going through the blocking CLI `input()` loop.
 """
 
 import argparse
 import re
 import sys
 from pathlib import Path
+
+
+# Matches '**Speaker N:**' tags (case-insensitive). Module-level so both
+# the CLI wrapper and the Gradio path share one definition.
+SPEAKER_PATTERN = re.compile(r"\*\*(Speaker\s+\d+):\*\*", re.IGNORECASE)
 
 
 def is_valid_name(name: str) -> bool:
@@ -18,14 +27,61 @@ def is_valid_name(name: str) -> bool:
     return bool(re.match(r"^[A-Za-z\s\-'.]+$", name))
 
 
+def detect_generic_speakers(content: str) -> list[str]:
+    """Return the sorted unique 'Speaker N' tags found in content.
+
+    Pure function. No I/O. Used by both the CLI path and the Gradio path
+    to decide whether a speaker-naming prompt is needed.
+
+        >>> detect_generic_speakers("**Speaker 2:** hi\\n**Speaker 1:** bye")
+        ['Speaker 1', 'Speaker 2']
+        >>> detect_generic_speakers("**Amanda:** hi")
+        []
+    """
+    return sorted(set(SPEAKER_PATTERN.findall(content)))
+
+
+def apply_speaker_mapping(content: str, mapping: dict[str, str]) -> str:
+    """Return content with '**{old}:**' replaced by '**{new}:**' per mapping.
+
+    Pure function. No I/O.
+
+    Rules:
+      * Keys whose value is an empty string are skipped (original tag
+        preserved). This lets callers pass a full mapping dict without
+        pre-filtering — blank inputs are treated as "leave as-is".
+      * Keys that never appear in content are no-ops.
+      * Substitution is case-insensitive, matching the detect regex.
+
+        >>> apply_speaker_mapping("**Speaker 1:** hi", {"Speaker 1": "Alice"})
+        '**Alice:** hi'
+        >>> apply_speaker_mapping("**Speaker 1:** hi", {"Speaker 1": ""})
+        '**Speaker 1:** hi'
+        >>> apply_speaker_mapping("**Speaker 1:** hi", {"Speaker 9": "Bob"})
+        '**Speaker 1:** hi'
+    """
+    for old_tag, new_name in mapping.items():
+        if not new_name:
+            continue
+        content = re.sub(
+            rf"\*\*{re.escape(old_tag)}:\*\*",
+            f"**{new_name}:**",
+            content,
+            flags=re.IGNORECASE,
+        )
+    return content
+
+
 def map_speakers(input_md: Path, out_dir: Path) -> Path:
+    """CLI entry point: read, detect, prompt, apply, write.
+
+    Behavior MUST stay bit-identical to the pre-refactor version — verified
+    by M1 regression diff against `output/named_files/*_named.md`.
+    """
     print(f"Reading {input_md.name}...")
     content = input_md.read_text(encoding="utf-8")
 
-    # Find all unique "Speaker X" tags.
-    # Our previous script formatted them as **Speaker X:**
-    speaker_pattern = re.compile(r"\*\*(Speaker\s+\d+):\*\*", re.IGNORECASE)
-    unique_speakers = sorted(set(speaker_pattern.findall(content)))
+    unique_speakers = detect_generic_speakers(content)
 
     if not unique_speakers:
         print("No generic 'Speaker X' tags found. Moving on.")
@@ -36,7 +92,7 @@ def map_speakers(input_md: Path, out_dir: Path) -> Path:
     print(f"\nFound {len(unique_speakers)} generic speakers. Let's map them.")
     print("Leave blank and press Enter to keep the original label.\n")
 
-    replacements = {}
+    replacements: dict[str, str] = {}
     for speaker in unique_speakers:
         while True:
             new_name = input(f"Enter real name for '{speaker}': ").strip()
@@ -49,12 +105,7 @@ def map_speakers(input_md: Path, out_dir: Path) -> Path:
         if new_name:
             replacements[speaker] = new_name
 
-    # Replace the generic tags with the new names in the content
-    for old_tag, new_name in replacements.items():
-        # Replace Speaker x: with <name>:
-        content = re.sub(
-            rf"\*\*{old_tag}:\*\*", f"**{new_name}:**", content, flags=re.IGNORECASE
-        )
+    content = apply_speaker_mapping(content, replacements)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     new_stem = input_md.stem.replace("_cleaned", "")
