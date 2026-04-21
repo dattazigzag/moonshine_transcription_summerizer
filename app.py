@@ -155,9 +155,11 @@ def init_session_state() -> dict[str, Any]:
     ``models_used`` collects model names touched during a session so M6 can
     eject them on cleanup.
 
-    Passed to ``gr.State(init_session_state)`` — Gradio calls the factory
-    per session, which prevents the known cross-session leak where a mutable
-    default would be shared across browser tabs.
+    Passed as ``gr.State(init_session_state())`` — the call produces a
+    dict which Gradio then deepcopies per session. (Passing the callable
+    itself, ``gr.State(init_session_state)``, does NOT work in Gradio 6.x:
+    the function object is handed through to handlers verbatim instead of
+    being invoked.)
     """
     return {
         "tempdir": None,
@@ -243,13 +245,12 @@ def on_test_connection(host: str) -> tuple[str, dict]:
 
 def build_demo() -> gr.Blocks:
     """Build the Gradio Blocks app."""
-    theme = gr.themes.Monochrome()  # squarish by default (radius_none)
-
-    with gr.Blocks(title="Local Meeting Summarizer", theme=theme) as demo:
-        # Per-session state — factory callable, NOT a mutable default. This
-        # avoids the known cross-session leak where two tabs would share the
-        # same dict object.
-        state = gr.State(init_session_state)
+    with gr.Blocks(title="Local Meeting Summarizer") as demo:
+        # Per-session state. ``init_session_state()`` is called here to
+        # produce the initial dict; Gradio deepcopies it per session so each
+        # browser tab gets its own independent copy. Do NOT pass the bare
+        # callable — see ``init_session_state`` docstring for why.
+        state = gr.State(init_session_state())
 
         with gr.Sidebar():
             gr.Markdown("### Settings")
@@ -344,6 +345,7 @@ def main() -> None:
         server_name=SERVER_HOST,
         server_port=SERVER_PORT,
         inbrowser=True,
+        theme=gr.themes.Monochrome(),  # squarish by default (radius_none)
     )
 
 
