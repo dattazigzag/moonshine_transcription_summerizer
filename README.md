@@ -1,4 +1,31 @@
-# Local Meeting Transcript Summarizer
+<p align="center">
+  <h1 align="center">Local Meeting Transcript Summarizer</h1>
+</p>
+<p align="center">
+  Privacy-first, multi-agent pipeline that turns raw meeting transcripts into polished, corporate-grade minutes.<br/>
+  CLI · Web UI · MCP tool — one pipeline, three entry points. Nothing leaves your network.
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
+  <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=astral&logoColor=white" alt="uv" />
+  <img src="https://img.shields.io/badge/Gradio-6.x-F97316?logo=gradio&logoColor=white" alt="Gradio 6.x" />
+  <img src="https://img.shields.io/badge/Ollama-local%20LLMs-000?logo=ollama&logoColor=white" alt="Ollama" />
+  <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-6c5ce7" alt="MCP Streamable HTTP" />
+  <img src="https://img.shields.io/badge/docker-CPU--only-2496ED?logo=docker&logoColor=white" alt="Docker (CPU-only)" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey" alt="macOS | Linux" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" />
+</p>
+<p align="center">
+  <a href="#architecture-at-a-glance">Architecture</a> ·
+  <a href="#prerequisites">Setup</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#pipeline-architecture">Pipeline</a> ·
+  <a href="#advanced-cli-usage">CLI</a> ·
+  <a href="#web-ui--tool-calling-gradio--mcp">Web UI &amp; MCP</a> ·
+  <a href="#docker-deployment">Docker</a> ·
+  <a href="#open-webui-integration">Open WebUI</a> ·
+  <a href="#design-notes">Design notes</a>
+</p>
 
 > [!Note]
 > A multi-agent, privacy-first pipeline that turns raw meeting transcripts into polished, corporate-grade meeting minutes using local LLMs (Gemma / Qwen) via Ollama. Accepts `.rtf` exports from [Moonshine.ai](https://note-taker.moonshine.ai/) **and** `.md` exports from our local transcriber — step 1 auto-detects the format and normalises both into the same canonical speaker-tagged markdown before the LLM agents run. Nothing leaves your network.
