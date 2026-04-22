@@ -379,26 +379,27 @@ The most useful deployment puts the Gradio server on a GPU host (e.g. ziggie, ou
 
 ```mermaid
 graph TB
-    subgraph "Your laptop"
-        CLIENT[MCP Client<br/>Claude Desktop / Inspector]
-        FILE[(Transcript<br/>on disk)]
+    subgraph LAPTOP["Your laptop"]
+        CLIENT["MCP Client<br/>Claude Desktop / Inspector"]
+        FILE["Transcript<br/>on disk"]
         HTTP["python3 -m http.server 8000"]
         FILE -. serves .-> HTTP
     end
 
-    subgraph "Gradio host (e.g. ziggie)"
+    subgraph GRADIO["Gradio host (e.g. ziggie)"]
         APP["app.py<br/>:7860/gradio_api/mcp/"]
         PIPE["pipeline/"]
         APP --> PIPE
     end
 
-    subgraph "Ollama host (same or separate)"
-        OLL[("Ollama :11434")]
+    subgraph OLLAMAHOST["Ollama host (same or separate)"]
+        OLL["Ollama :11434"]
     end
 
-    CLIENT ==>|"summarize_transcript(<br/>file='http://laptop:8000/meeting.md'<br/>)"| APP
-    APP -. httpx.stream .-> HTTP
-    PIPE <==>|LLM calls| OLL
+    CLIENT ==>|"summarize_transcript<br/>file = http://laptop:8000/meeting.md"| APP
+    %% The fix is below: using quotes and ensuring proper dot notation
+    APP -. "httpx.stream" .-> HTTP
+    PIPE <==>|"LLM calls"| OLL
     APP ==>|"returns final markdown"| CLIENT
 
     classDef client fill:#00b894,stroke:#000,color:#fff;

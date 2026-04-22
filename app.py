@@ -9,17 +9,6 @@ Run:
     uv run app.py
 
 Then open http://localhost:7860 in a browser.
-
-Status: M6 complete · M6.5 in progress.
-This pass (M6.5 round 4):
-  * Rendered/Raw visibility is now CSS-class driven (no more fighting
-    Gradio's ``visible="hidden"`` — both components stay visible=True, a
-    ``.view-raw`` class on the outer column flips which is displayed).
-  * Refresh button uses an inline FontAwesome SVG (theme-colour-aware via
-    ``fill="currentColor"``) instead of the 🔄 emoji.
-  * Progress bar track+fill contrast bumped via scoped CSS overrides.
-  * Streaming log helper slimmed (single generator, plain StringIO under
-    the GIL; the _StreamingBuffer class is gone).
 """
 
 from __future__ import annotations
@@ -219,6 +208,48 @@ CUSTOM_CSS = """
     width: 16px;
     height: 16px;
     margin: 0 !important;
+}
+
+/* App footer — attribution line that sits at the bottom of our main
+   gr.Column, which means it renders immediately above Gradio's own
+   built-in "Use via API · Built with Gradio · Settings" strip.
+   (Gradio 6 has no public API to inject items INTO that strip, so
+   our line + Gradio's line are stacked siblings at the page end.)
+
+   Sticky-footer trick: on short pages (empty state, no upload yet)
+   we want the footer to land near the bottom, not float in the
+   middle of a blank page. Done here with flexbox on our main column:
+   give it min-height that fills the viewport minus a rough Gradio
+   footer reservation, make it a flex column, and push #app-footer
+   down with margin-top: auto. On long pages (after a summary has
+   rendered) the column grows past min-height and the footer sits
+   directly after the Download button — exactly the natural-flow
+   behaviour we want. */
+.gradio-container > .main > .contain > .wrap,
+.gradio-container > .main > .contain,
+.gradio-container > .main {
+    min-height: calc(100vh - 60px);  /* 60px ≈ Gradio's own footer */
+}
+
+/* Target the main content column (the gr.Column sibling to the
+   sidebar) and make it a flex container so margin-top: auto on the
+   footer works. Gradio wraps columns in a div with class `.column`
+   inside a `.form`/`.panel`; we rely on the common `.column` class. */
+#app-footer {
+    margin-top: auto;       /* pushes to bottom when column has extra height */
+    padding-top: 24px;
+    padding-bottom: 8px;
+    text-align: center;
+    opacity: 0.55;
+    font-size: 0.85em;
+}
+#app-footer a {
+    color: inherit;
+    text-decoration: none;
+}
+#app-footer a:hover {
+    opacity: 1;
+    text-decoration: underline;
 }
 """
 
@@ -1585,6 +1616,22 @@ def build_demo() -> gr.Blocks:
                         visible=False,
                         elem_id="download-btn",
                     )
+
+            # ── Footer ───────────────────────────────────────────────────
+            # Sits above Gradio's own built-in footer (the small "Built
+            # with Gradio" strip). Gradio 6 has no API to add items TO
+            # the built-in footer, so we append our own attribution line
+            # at the bottom of the main column instead. CSS in
+            # CUSTOM_CSS keeps it muted, centre-aligned, and with a bit
+            # of top margin so it doesn't hug the Download button.
+            gr.Markdown(
+                (
+                    "[Saurabh Datta](https://github.com/dattasaurabh82) · "
+                    "[zigzag.is](https://zigzag.is) · "
+                    "[GitHub](https://github.com/dattazigzag/local-meeting-transcript-summerizer)"
+                ),
+                elem_id="app-footer",
+            )
 
         # ── Event wiring ──────────────────────────────────────────────────
 
