@@ -1341,7 +1341,7 @@ def build_demo() -> gr.Blocks:
                     "Each tab runs independently — multiple tabs = multiple "
                     "queue slots. When you close the tab, the models your "
                     "session loaded and its temp files are cleaned up "
-                    "automatically (within about an hour)."
+                    "automatically (within about an hour). ENGLISH GIVES BEST RESULTS"
                 )
 
             upload = gr.File(
