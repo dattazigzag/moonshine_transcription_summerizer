@@ -32,5 +32,4 @@ ENV GRADIO_DO_NOT_TRACK=True
 
 EXPOSE 2070
 
-
 CMD ["uv", "run", "python", "app.py", "--port", "2070"]

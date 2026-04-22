@@ -1,5 +1,5 @@
 services:
-  meeting-summarizer:
+  meeting-transcript-summarizer:
     build: .
     container_name: meeting-transcript-summarizer
     restart: unless-stopped
