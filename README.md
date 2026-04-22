@@ -177,7 +177,7 @@ Dispatches by file suffix:
 - `.rtf` → strips Moonshine's RTF formatting and groups consecutive speech.
 - `.md` → parses our local transcriber's H3-heading format (with per-turn timestamps and language tags), or passes through an already-canonical markdown file unchanged.
 
-Both paths emit the same canonical Markdown (`**Speaker N:** text`) plus a JSON sidecar with turn stats. See [`contexts/multi_format_ingest.md`](contexts/multi_format_ingest.md) for the full spec and design decisions.
+Both paths emit the same canonical Markdown (`**Speaker N:** text`) plus a JSON sidecar with turn stats.
 
 ```bash
 # Moonshine input (.rtf)
@@ -336,7 +336,7 @@ flowchart TD
 1. **Upload** (drag-drop or file picker) — `.rtf` or `.md`, 10 MB cap.
 2. **Preview** of the normalized canonical markdown, plus a one-line summary (turn count, speaker detection).
 3. **Speaker names form** — appears automatically whenever step 1 found any speakers at all. Generic `Speaker N` tags get editable textboxes; already-named speakers get disabled "(already named)" textboxes so you can see the full cast. Leave a generic field blank to keep the original tag.
-4. **Run** (and **Stop** mid-run, which cancels the generator; Ollama's current step finishes before models unload — documented trade-off of the non-streaming Ollama call, see [`contexts/gradio_app.md` — decision F3](contexts/gradio_app.md)).
+4. **Run** (and **Stop** mid-run, which cancels the generator; Ollama's current step finishes before models unload — documented trade-off of the non-streaming Ollama call.
 5. **Console** with a progress bar and a live streaming log panel. The log panel captures the exact same stdout the CLI prints.
 6. **Final summary** rendered inline, with **Rendered** / **Raw** toggle, **Copy** (puts markdown source on the clipboard), and **Download .md**.
 
@@ -641,7 +641,7 @@ Longer version: this keeps the image tiny and fast to build, lets the summarizer
 ├── uv.lock
 ├── Dockerfile                     # CPU-only image, port 2070
 ├── docker-compose.yml             # ziggie-net, OLLAMA_HOST=http://ollama:11434
-├── .dockerignore                  # excludes .venv, .env, output/, transcripts/, contexts/
+├── .dockerignore                  # excludes .venv, .env, output/, transcripts/
 ├── main.py                        # CLI orchestrator
 ├── app.py                         # Gradio + MCP server
 ├── pipeline/
@@ -653,9 +653,6 @@ Longer version: this keeps the image tiny and fast to build, lets the summarizer
 │   └── step5_formatter.py
 ├── assets/
 │   └── refresh.svg               # web UI refresh icon (FontAwesome)
-├── contexts/
-│   ├── gradio_app.md             # spec + milestone log for the Gradio/MCP work
-│   └── multi_format_ingest.md    # spec for step 1's RTF+MD dispatcher
 ├── transcripts/                  # sample inputs (gitignored by default)
 └── output/                       # CLI outputs — one dir per pipeline step
     ├── raw_files/
@@ -672,8 +669,6 @@ In docker mode, the host-side volume `/data/services/meeting-summarizer/outputs/
 ---
 
 ## Design notes
-
-The trickier decisions and their *why*, condensed from [`contexts/gradio_app.md`](contexts/gradio_app.md):
 
 ### 10 MB upload cap, no token-budget pre-check
 
