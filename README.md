@@ -729,6 +729,7 @@ Every `(host, model)` pair ever loaded during the process's lifetime is tracked 
 - [x] Deploy in Docker — CPU-only image on ziggie, reachable at `ziggie.is:2070`, talks to Ollama via `ziggie-net` container DNS. See [Docker Deployment](#docker-deployment).
 - [x] Test tool-calling from Open WebUI — native MCP Streamable HTTP connection (no `mcpo` bridge needed; we speak Streamable HTTP directly). Upload-in-chat UX validated end-to-end on ziggie's Open WebUI with `.md` transcripts + Gemma 26B via the `content=` parameter.
 - [x] Check frombehind https (caddy) ziggie
+- [ ] ...
 
 ---
 
