@@ -13,7 +13,7 @@ Three ways in, one pipeline, one Ollama connection:
 graph LR
     subgraph "Entry points"
         CLI["CLI<br/><code>uv run main.py</code>"]
-        WEB["Browser<br/><code>localhost:7860</code>"]
+        WEB["Browser<br/><code>:7860 bare metal</code><br/><code>:2070 docker</code>"]
         MCP["MCP Client<br/>Claude Desktop, Open WebUI, Cursor, …"]
     end
 
@@ -84,7 +84,7 @@ During the development of this pipeline, several critical discoveries shaped the
 
 ## Quickstart
 
-Three entry points, one `uv sync` away:
+Three ways to talk to the pipeline (CLI / browser / MCP), one deployment choice (bare metal vs Docker). `uv sync` first.
 
 ### CLI (master orchestrator)
 
@@ -105,6 +105,14 @@ Open <http://localhost:7860>. Upload a transcript, fill speaker names in the for
 ### MCP tool (from another LLM)
 
 `uv run app.py` also boots an MCP server at <http://localhost:7860/gradio_api/mcp/> (Streamable HTTP transport). Point Claude Desktop, Open WebUI, Cursor, the MCP Inspector, or any other MCP client at it and call the single exposed tool, `summarize_transcript`. See [MCP exposure](#mcp-exposure) for the contract and file-argument formats.
+
+### Docker (production deployment)
+
+```bash
+docker compose up -d
+```
+
+Builds a small CPU-only image (~200 MB), starts on port 2070, reaches Ollama via the shared `ziggie-net` Docker network. Same Gradio UI + MCP endpoint as bare-metal, just containerised. See [Docker Deployment](#docker-deployment) for the full runbook.
 
 ---
 
@@ -419,17 +427,203 @@ ifconfig en0 | awk '/inet /{print $2}'
 
 ---
 
+## Docker Deployment
+
+The summarizer ships with a `Dockerfile` and `docker-compose.yml` so it can run as a long-lived service on a host like ziggie alongside Ollama, Open WebUI, and the other GPU services. **Unlike our sibling projects (transcriber, translater) the summarizer does not host any model weights and does not reserve a GPU.** It's a CPU-only service that talks to Ollama over HTTP, and delegates all inference to whichever Ollama container is reachable on the network.
+
+### Container topology
+
+```mermaid
+graph TB
+    subgraph "ziggie host"
+        subgraph "ziggie-net (Docker bridge network)"
+            SUM["<b>meeting-transcript-summarizer</b><br/>CPU-only<br/>port 2070"]
+            OLL[("<b>ollama</b><br/>GPU 0<br/>port 11434")]
+            OWUI["open-webui<br/>(optional MCP client)<br/>port 3000"]
+        end
+        DATA[("/data/services/<br/>meeting-summarizer/<br/>outputs")]
+    end
+
+    MAC["Your laptop<br/>browser / MCP Inspector"]
+
+    MAC ==>|"http://ziggie.is:2070 (web UI)"| SUM
+    MAC ==>|"http://ziggie.is:2070/gradio_api/mcp/"| SUM
+    OWUI -. optional .-> SUM
+    SUM ==>|"http://ollama:11434<br/>(container DNS)"| OLL
+    SUM -. CLI-only persistence .-> DATA
+
+    classDef cpu fill:#0984e3,stroke:#000,color:#fff;
+    classDef gpu fill:#6c5ce7,stroke:#000,color:#fff;
+    classDef client fill:#00b894,stroke:#000,color:#fff;
+    classDef data fill:#636e72,stroke:#000,color:#fff;
+    class SUM,OWUI cpu;
+    class OLL gpu;
+    class MAC client;
+    class DATA data;
+```
+
+Key points:
+
+- **No GPU reservation.** The compose file has no `deploy.resources.reservations.devices` block. The container is pure Python, `~200 MB`, starts in seconds.
+- **Ollama is reached by container name**, not IP. Both containers are on the shared external `ziggie-net` Docker network, so `http://ollama:11434` resolves via Docker DNS.
+- **No model cache volume.** Nothing is pre-downloaded into the image or mounted. All models live on the Ollama container.
+- **One optional volume** (`/app/output`) exists only for CLI-mode runs triggered via `docker exec` — the Gradio UI and MCP tool both use per-session tempdirs that are cleaned up automatically.
+
+### Prerequisites
+
+- Docker Engine + Docker Compose plugin
+- An existing shared Docker network named `ziggie-net`. On ziggie this is created during core setup (see [`ziggie_setup_assistance/guides/02_DOCKER_AND_CORE.md §2.6`](https://github.com/zigzagGmbH/ziggie_setup_assistance)). Verify:
+  ```bash
+  docker network ls | grep ziggie-net
+  # 890b6fe61885   ziggie-net     bridge    local
+  ```
+  If it doesn't exist: `docker network create ziggie-net`.
+- An Ollama container reachable on `ziggie-net` as `ollama`, listening on `11434`. Verify:
+  ```bash
+  docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep 11434
+  # ollama                0.0.0.0:11434->11434/tcp, [::]:11434->11434/tcp
+  ```
+  If your Ollama container has a different name, either rename it or change the `OLLAMA_HOST` default in `docker-compose.yml`.
+
+### One-time host setup
+
+Create the output volume directory. Root-owned is fine — the container runs as root and can write to root-owned bind mounts.
+
+```bash
+sudo mkdir -p /data/services/meeting-summarizer/outputs
+# No chown needed. Matches the transcriber / translater pattern.
+```
+
+### Deploy
+
+```bash
+git clone git@github.com:<user>/local-meeting-transcript-summerizer.git
+cd local-meeting-transcript-summerizer
+
+docker compose build      # ~30-60 s first build
+docker compose up -d
+docker compose logs -f meeting-transcript-summarizer
+```
+
+You should see something like:
+
+```
+* Running on local URL:  http://0.0.0.0:2070
+
+🔨 Launching MCP server:
+* Streamable HTTP URL: http://localhost:2070/gradio_api/mcp/
+```
+
+From your Mac:
+
+- Web UI: <http://ziggie.is:2070>
+- MCP endpoint: <http://ziggie.is:2070/gradio_api/mcp/>
+
+### Configuration — `.env` vs compose `environment:`
+
+The summarizer's only required config is `OLLAMA_HOST`. There are two ways to provide it, used in two different situations:
+
+| Situation | Config source | Value |
+| :--- | :--- | :--- |
+| Bare metal (`uv run app.py` / `uv run main.py` on your Mac) | `.env` file in the project root | `OLLAMA_HOST=http://127.0.0.1:11434` |
+| Docker (this service, on ziggie) | `environment:` block in `docker-compose.yml` | `OLLAMA_HOST=http://ollama:11434` |
+
+These don't conflict. Inside the container, `python-dotenv`'s `load_dotenv()` looks for a `.env` file — but `.env` is excluded by `.dockerignore` and never ships in the image. So `load_dotenv()` is a no-op inside the container, and `os.environ.get("OLLAMA_HOST")` picks up the compose-injected value. On bare metal there's no compose env, so `load_dotenv()` reads the host-side `.env` as usual.
+
+If both happened to be set, compose wins because it seeds the container env *before* Python runs, and `load_dotenv()` by default does not override existing env vars.
+
+### Port and networking
+
+| Flag | Value | Set where |
+| :--- | :--- | :--- |
+| Internal bind port | `2070` | `Dockerfile` `CMD` `--port 2070` and `EXPOSE 2070` |
+| Internal bind host | `0.0.0.0` | `app.py` argparse default (no override needed in container) |
+| Host port | `2070` | `docker-compose.yml` `ports: "2070:2070"` |
+| Ollama URL | `http://ollama:11434` | `docker-compose.yml` `environment:` block |
+
+To expose the UI on a different host port (e.g. `7860` to match bare metal), change only the host side of the compose `ports` mapping — the container still binds 2070 internally:
+
+```yaml
+ports:
+  - "7860:2070"
+```
+
+To change the internal port you must update **three** places in lockstep: `Dockerfile` `CMD`, `Dockerfile` `EXPOSE`, and the right-hand side of `docker-compose.yml` `ports:`. Mixed ports cause silent "Running on local URL" → unreachable-from-host bugs.
+
+### CLI inside the container
+
+The CLI (`main.py`) and its output tree (`output/`) are preserved for anyone who wants to run a one-off summary without the web UI:
+
+```bash
+# Copy a transcript into the container:
+docker cp ~/transcripts/meeting.rtf meeting-transcript-summarizer:/app/transcript.rtf
+
+# Run the pipeline interactively:
+docker exec -it meeting-transcript-summarizer \
+    uv run main.py /app/transcript.rtf
+
+# Output lands in /app/output/final_summaries/ inside the container,
+# which is bind-mounted to /data/services/meeting-summarizer/outputs/
+# on the host. Grep / rsync from there.
+sudo ls /data/services/meeting-summarizer/outputs/final_summaries/
+```
+
+The web UI and MCP tool both use ephemeral `tempfile.mkdtemp()` directories inside the container, so they don't touch this volume.
+
+### Updating after code changes
+
+```bash
+git pull
+docker compose build --no-cache        # forces a fresh COPY of source files
+docker compose up -d
+```
+
+Use `--no-cache` after code changes; Docker's layer cache can serve a stale `COPY app.py main.py ./` layer even if the file content changed.
+
+### Why no GPU reservation?
+
+Short version: the summarizer doesn't run a model. It's a thin orchestrator that makes HTTP calls to Ollama. Ollama is the one with the GPU.
+
+Longer version: this keeps the image tiny and fast to build, lets the summarizer coexist with any Ollama topology (same host, different host on the LAN, even a developer's laptop), and avoids contention with the R&D workloads already pinned to ziggie's GPU 1 (transcriber, translater). If your Ollama instance has access to a GPU and can serve the models you picked — we inherit that acceleration for free.
+
+### Troubleshooting
+
+1. **`docker compose up` succeeds but the container exits immediately, logs show "Error: OLLAMA_HOST is missing":**
+   The `environment:` block in `docker-compose.yml` didn't make it into the container. Run `docker compose config | grep OLLAMA_HOST` to confirm what compose is actually injecting. Rebuild with `docker compose up -d --force-recreate`.
+2. **Container starts, UI loads, but every pipeline run fails at pre-flight with "Cannot reach Ollama":**
+   Either the Ollama container isn't on `ziggie-net`, or it's named something other than `ollama`. Check with `docker network inspect ziggie-net | grep -A1 ollama`. Simplest fix: rename your Ollama container, OR override the env in compose:
+   ```yaml
+   environment:
+     - OLLAMA_HOST=http://<actual-ollama-name>:11434
+   ```
+3. **"Models not pulled on ...":**
+   The container reached Ollama but the Ollama container doesn't have `gemma4:26b` (or whatever model you picked). Pull it on the Ollama side:
+   ```bash
+   docker exec ollama ollama pull gemma4:26b
+   ```
+4. **MCP Inspector times out after 60 s even though logs show "✅ Summary ready":**
+   Client-side timeout; server is fine. Bump Inspector's `Request Timeout` to `600000` and `Maximum Total Timeout` to `900000` (both in ms). Same class of issue will hit `mcpo` / Open WebUI when wired up — give them generous HTTP timeouts.
+5. **`docker compose logs` is silent / buffered:**
+   `PYTHONUNBUFFERED=1` is set in both the Dockerfile and compose. If you still see buffered output, confirm with `docker inspect meeting-transcript-summarizer | grep PYTHONUNBUFFERED`.
+6. **Port 2070 already in use on the host:**
+   Another service is bound there. Change the host-side of `ports:` in compose, e.g. `"2171:2070"`, and hit `http://ziggie.is:2171`.
+
+---
+
 ## Directory Structure
 
 ```txt
 .
 ├── README.md
 ├── LICENSE
-├── .env.template
+├── .env.template                  # bare-metal OLLAMA_HOST config (not in image)
 ├── pyproject.toml
 ├── uv.lock
-├── main.py                       # CLI orchestrator
-├── app.py                        # Gradio + MCP server
+├── Dockerfile                     # CPU-only image, port 2070
+├── docker-compose.yml             # ziggie-net, OLLAMA_HOST=http://ollama:11434
+├── .dockerignore                  # excludes .venv, .env, output/, transcripts/, contexts/
+├── main.py                        # CLI orchestrator
+├── app.py                         # Gradio + MCP server
 ├── pipeline/
 │   ├── __init__.py               # announce() helper shared by main.py and app.py
 │   ├── step1_convert.py
@@ -452,6 +646,8 @@ ifconfig en0 | awk '/inet /{print $2}'
 ```
 
 The web UI and MCP tool never write to `output/`; they use a per-call `tempfile.mkdtemp()` that's cleaned up when the session / call ends. Only `main.py` writes to the on-disk `output/` tree.
+
+In docker mode, the host-side volume `/data/services/meeting-summarizer/outputs/` is bind-mounted to `/app/output/` inside the container so CLI-mode runs via `docker exec` survive container rebuilds.
 
 ---
 
@@ -510,7 +706,7 @@ Every `(host, model)` pair ever loaded during the process's lifetime is tracked 
 - [x] Gradio implementation (chosen for its built-in API and MCP support).
 - [x] Gradio with simple API and MCP (local testing — Tests 1–3).
 - [x] Test MCP with remote / cross-machine file transfer (Test 4: Gradio on ziggie, MCP Inspector on Mac, transcript hosted from Mac via `python -m http.server`, pipeline ran on ziggie's GPUs, summary returned across the LAN).
-- [ ] Deploy in Docker.
+- [x] Deploy in Docker — CPU-only image on ziggie, reachable at `ziggie.is:2070`, talks to Ollama via `ziggie-net` container DNS. See [Docker Deployment](#docker-deployment).
 - [ ] Test with tool-calling features from Open WebUI (via `mcpo` bridge).
 
 ---
