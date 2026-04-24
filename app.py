@@ -1129,6 +1129,46 @@ def run_pipeline_generator(
                     announce_unload_result(m, ok=False, error=str(e))
 
 
+# ─── Stateless Gradio API endpoint (M12.2) ───────────────────────────────
+
+
+def markdown_to_pdf_endpoint(markdown: str) -> str:
+    """Convert markdown text to a PDF file (M12.2 — stateless).
+
+    Registered via ``gr.api(..., api_visibility="private")`` so it's
+    reachable over HTTP but NOT listed in the MCP tool schema.
+    Callable via ``gradio_client.Client`` or a direct
+    ``POST /gradio_api/call/markdown_to_pdf``.
+
+    Stateless: one fresh tempdir per call, no session binding, no
+    cache. Callers that want session-aware PDF behaviour should use
+    the Web UI's PDF radio path instead.
+
+    Returns a filesystem path string; Gradio transparently turns that
+    into a served file URL for the HTTP caller. Bytes-over-HTTP would
+    be non-idiomatic in Gradio and would force callers into a custom
+    response-handling path; the path-return convention is what
+    ``gradio_client`` and the `/gradio_api/call/` shape both expect.
+
+    Args:
+        markdown: Markdown text body. Must not be empty / whitespace.
+
+    Returns:
+        Absolute path to the generated PDF file (inside a per-call
+        tempdir under ``tempfile.gettempdir()``).
+
+    Raises:
+        ValueError: markdown is empty / whitespace only.
+        OSError: write failure propagated from ``md_to_pdf``.
+    """
+    if not markdown or not markdown.strip():
+        raise ValueError("Markdown source is empty.")
+    tempdir = Path(tempfile.mkdtemp(prefix="mdpdf_api_"))
+    out_path = tempdir / "summary.pdf"
+    md_to_pdf(markdown, out_path)
+    return str(out_path)
+
+
 # ─── MCP-exposed tool ──────────────────────────────────────────────────
 
 def on_view_mode_pdf(
@@ -2050,6 +2090,17 @@ def build_demo() -> gr.Blocks:
         # Gradio 6 — see gr.Blocks docs: "If fn is None, api_visibility
         # will automatically be set to 'private'."
         gr.api(summarize_transcript, api_name="summarize_transcript")
+
+        # M12.2: stateless markdown→PDF endpoint. HTTP-callable but
+        # NOT in the MCP tool list (api_visibility="private"). Callers
+        # who already have a markdown string (e.g. the output of a
+        # prior summarize_transcript call) can pipe it through this
+        # endpoint to get a PDF back, without a browser session.
+        gr.api(
+            markdown_to_pdf_endpoint,
+            api_name="markdown_to_pdf",
+            api_visibility="private",
+        )
 
     return demo
 

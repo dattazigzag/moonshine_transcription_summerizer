@@ -538,7 +538,8 @@ Full rationale lives in [`contexts/pdf_export.md`](contexts/pdf_export.md) — h
 These are tracked in `contexts/pdf_export.md`'s "Deferred" section. Not bugs, not missing features — conscious scope decisions.
 
 - **No page numbers or footers.** Would require PyMuPDF post-processing (re-open the saved PDF, `page.insert_text()` per page, re-save). Parked until someone actually asks.
-- **No custom brand fonts.** `markdown-pdf` doesn't expose PyMuPDF's `archive` parameter through its public API, so custom fonts (Inter, Roboto, etc.) would require a library fork. Upcoming M12.3 adds [Space Mono](https://fonts.google.com/specimen/Space+Mono) for code blocks via `pymupdf-fonts` — that's as far as the library goes without forking. Body text stays default serif (Times-like).
+- **Code blocks render in Courier, not a nicer monospace.** We investigated upgrading to Space Mono via `pymupdf-fonts` + `css_for_pymupdf_font()` (M12.3 in the spec). PyMuPDF can generate correct `@font-face` CSS, but `markdown-pdf` doesn't expose PyMuPDF's `Archive` through its public API — the font buffer can't reach the renderer. M12.3 dropped. The clean future path is a direct `fitz.Story` wrapper (~40 lines) that replaces `markdown-pdf` entirely; parked until there's a real ask.
+- **No custom brand fonts.** Same library limitation as above. Same future path (`fitz.Story` wrapper). Body text stays default serif (Times-like), code stays Courier.
 - **No PDF-via-MCP.** The MCP tool contract is locked in v1. Future expansion is possible via an `output_format="pdf"` parameter, but that's a new scope, not a current gap.
 
 ---
