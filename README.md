@@ -9,6 +9,7 @@
   <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+" />
   <img src="https://img.shields.io/badge/uv-package%20manager-DE5FE9?logo=astral&logoColor=white" alt="uv" />
   <img src="https://img.shields.io/badge/Gradio-6.x-F97316?logo=gradio&logoColor=white" alt="Gradio 6.x" />
+  <img src="https://img.shields.io/badge/PDF-export-brightgreen" alt="PDF export" />
   <img src="https://img.shields.io/badge/Ollama-local%20LLMs-000?logo=ollama&logoColor=white" alt="Ollama" />
   <img src="https://img.shields.io/badge/MCP-Streamable%20HTTP-6c5ce7" alt="MCP Streamable HTTP" />
   <img src="https://img.shields.io/badge/docker-CPU--only-2496ED?logo=docker&logoColor=white" alt="Docker (CPU-only)" />
@@ -22,6 +23,7 @@
   <a href="#pipeline-architecture">Pipeline</a> ·
   <a href="#advanced-cli-usage">CLI</a> ·
   <a href="#web-ui--tool-calling-gradio--mcp">Web UI &amp; MCP</a> ·
+  <a href="#pdf-export">PDF</a> ·
   <a href="#docker-deployment">Docker</a> ·
   <a href="#open-webui-integration">Open WebUI</a> ·
   <a href="#design-notes">Design notes</a>
@@ -71,6 +73,8 @@ Generating high-quality meeting minutes locally from 45+ minute transcripts is c
 
 **Our Solution:** We break the problem down into a **5-step chained pipeline**. By isolating tasks — cleanup, human-in-the-loop speaker identification, data extraction, and final formatting — we can achieve "Google-level" summary quality using local, consumer-grade hardware while keeping sensitive corporate data 100% private.
 
+Output is markdown by default; PDF is available opt-in via a CLI flag or the Web UI's three-state Rendered / Raw / PDF toggle — see [PDF Export](#pdf-export).
+
 ---
 
 ## Key Learnings & Architecture Decisions
@@ -85,6 +89,7 @@ During the development of this pipeline, several critical discoveries shaped the
    * **Qwen (~27B)** is highly logical but tends to over-compress. It requires "negative constraints" (e.g., *CRITICAL INSTRUCTION: DO NOT summarize away technical details*) to ensure high data fidelity.
    * *Solution:* The pipeline uses **Dynamic Prompting**, automatically switching the internal system prompt based on the `--model` argument passed in the CLI (or the `editor_model` / `extractor_model` selected in the web UI / MCP call).
 5. **VRAM Optimization:** We utilize the `keep_alive=-1` parameter in the Ollama API to keep the LLM loaded in VRAM across the sequential scripts, drastically reducing execution time. Every entry point (CLI, web UI, MCP) also ejects models at the end of a run via `keep_alive=0`, so Ollama's VRAM is returned to the shared pool as soon as the pipeline finishes.
+6. **PDF export as an opt-in, additive layer:** markdown stays the primary output contract (CLI success signal, MCP return type, Web UI default view). PDF is never generated speculatively — only when the user explicitly asks for it via `--pdf` / the UI's PDF radio / (soon) the `markdown_to_pdf` HTTP endpoint. We picked [`markdown-pdf`](https://pypi.org/project/markdown-pdf/) (pure-Python, PyMuPDF-based) over alternatives that needed Cairo/Pango/Playwright system deps, keeping the Docker image CPU-only and ~200 MB.
 
 ---
 
@@ -199,6 +204,8 @@ graph TD
     class SRC,FINAL io;
     class OLLAMA infra;
 ```
+
+> **Optional 6th step — PDF export** runs post-pipeline via `pipeline/pdf_export.py`, never as part of the main success path. Triggered by `--pdf` on the CLI, the PDF radio in the Web UI, or (planned) the `markdown_to_pdf` HTTP endpoint. The markdown success signal is independent of PDF generation; a PDF failure never flips the pipeline's exit code. See [PDF Export](#pdf-export) for details.
 
 ### Step 1: Ingest & Normalize Transcript (Non-LLM)
 
@@ -483,6 +490,59 @@ ifconfig en0 | awk '/inet /{print $2}'
 
 ---
 
+## PDF Export
+
+Opt-in export to PDF alongside the canonical markdown output. The feature is additive across all three entry points — nothing about v1 markdown behaviour changes when you don't explicitly ask for PDF.
+
+### Summary of entry points
+
+| Entry point | How to enable PDF | What you get |
+| :--- | :--- | :--- |
+| **CLI** (`main.py`) | Pass `--pdf` (opt-in, off by default) | Both `<stem>_summary.md` and `<stem>_summary.pdf` in `output/final_summaries/` |
+| **Web UI** (`app.py`) | Click the **PDF** radio in the three-state toggle | Inline iframe preview + Download button adapts to serve `.pdf` |
+| **MCP tool** (`summarize_transcript`) | Not exposed | Returns `str` markdown only. MCP contract unchanged. |
+| **HTTP API** (planned, M12.2) | Call `/gradio_api/call/markdown_to_pdf` with markdown text | Returns a file path/URL the caller can download as PDF |
+
+### CLI usage
+
+```bash
+# Default — only .md produced, unchanged from pre-M11 behaviour:
+uv run main.py transcripts/MeetingTranscript.rtf
+
+# With --pdf — both .md AND .pdf written:
+uv run main.py transcripts/MeetingTranscript.rtf --pdf
+```
+
+PDF generation runs **after** the `✅ Pipeline Complete!` success signal. Markdown is the primary output; PDF is a bonus. A PDF conversion failure prints a warning but does not flip the exit code — scripts that check `$?` continue to work as before.
+
+### Web UI usage
+
+Run the pipeline. Once the summary appears, the three-state **Rendered / Raw / PDF** radio is live. Click **PDF** to generate and inline-preview the PDF:
+
+- **First click:** a "Generating PDF…" placeholder appears within ~50 ms. 1–3 seconds later, a browser-native PDF iframe replaces it (use the browser's built-in viewer for pan/zoom/search/print).
+- **Download button adapts:** in Rendered / Raw it serves `.md`; in PDF it serves `.pdf`. During the 1–3 s generation window it's disabled to avoid ambiguity about which file it points at.
+- **Subsequent clicks:** cached — iframe appears instantly, no regeneration.
+- **Cache invalidation:** uploading a new file or re-running the pipeline clears the cached PDF. The next click on PDF regenerates.
+
+### Technical choices (condensed)
+
+Full rationale lives in [`contexts/pdf_export.md`](contexts/pdf_export.md) — here's the short version:
+
+- **Library: [`markdown-pdf`](https://pypi.org/project/markdown-pdf/) (vb64)** — pure Python, depends only on `PyMuPDF` + `markdown-it-py`. Zero system libraries. Works in the existing CPU-only slim Docker image unchanged. Alternatives (`md2pdf`/WeasyPrint, `markdown-html-pdf`/Playwright) were rejected for requiring Cairo/Pango/Playwright system deps that would have bloated the image.
+- **Inline preview via `<iframe>` + `gr.HTML`** — zero new frontend deps. Browsers have had native PDF viewers for ~15 years; users get pan/zoom/search/print for free. `gradio-pdf` was ruled out because it caps at `gradio<6.0` and we run `>=6.13`. The iframe URL uses `/gradio_api/file=<path>` (Gradio 6's static-file endpoint); the tempfile root is whitelisted via `allowed_paths=[tempfile.gettempdir()]` in `demo.launch()`.
+- **Lazy generation, per-session cache** — PDFs are never generated at pipeline completion, only on explicit user request. Cached paths live in session state and are invalidated automatically on new upload / new run / session teardown.
+- **MCP tool surface unchanged** — `summarize_transcript` still returns a plain `str` of markdown. Changing it to bytes would break every existing MCP client. If a consumer wants PDF bytes, they'll get them through the planned HTTP endpoint (M12.2), not the MCP tool.
+
+### Known limitations (intentionally deferred)
+
+These are tracked in `contexts/pdf_export.md`'s "Deferred" section. Not bugs, not missing features — conscious scope decisions.
+
+- **No page numbers or footers.** Would require PyMuPDF post-processing (re-open the saved PDF, `page.insert_text()` per page, re-save). Parked until someone actually asks.
+- **No custom brand fonts.** `markdown-pdf` doesn't expose PyMuPDF's `archive` parameter through its public API, so custom fonts (Inter, Roboto, etc.) would require a library fork. Upcoming M12.3 adds [Space Mono](https://fonts.google.com/specimen/Space+Mono) for code blocks via `pymupdf-fonts` — that's as far as the library goes without forking. Body text stays default serif (Times-like).
+- **No PDF-via-MCP.** The MCP tool contract is locked in v1. Future expansion is possible via an `output_format="pdf"` parameter, but that's a new scope, not a current gap.
+
+---
+
 ## Docker Deployment
 
 The summarizer ships with a `Dockerfile` and `docker-compose.yml` so it can run as a long-lived service on a host like ziggie alongside Ollama, Open WebUI, and the other GPU services. **Unlike our sibling projects (transcriber, translater) the summarizer does not host any model weights and does not reserve a GPU.** It's a CPU-only service that talks to Ollama over HTTP, and delegates all inference to whichever Ollama container is reachable on the network.
@@ -663,6 +723,8 @@ Longer version: this keeps the image tiny and fast to build, lets the summarizer
    `PYTHONUNBUFFERED=1` is set in both the Dockerfile and compose. If you still see buffered output, confirm with `docker inspect meeting-transcript-summarizer | grep PYTHONUNBUFFERED`.
 6. **Port 2070 already in use on the host:**
    Another service is bound there. Change the host-side of `ports:` in compose, e.g. `"2171:2070"`, and hit `http://ziggie.is:2171`.
+7. **PDF radio in the Web UI shows `{"detail": "Not Found"}` in the iframe:**
+   Gradio's static-file serving route and path whitelist got out of sync with what the iframe URL expects. The supported combination as of Gradio 6.13 is `<iframe src="/gradio_api/file=/absolute/path">` **AND** `demo.launch(allowed_paths=[tempfile.gettempdir()])`. Both must be present. If a future Gradio update changes either, this is where to start debugging — and worth checking that iframes still work transparently through Caddy afterwards.
 
 ---
 
@@ -681,12 +743,16 @@ Longer version: this keeps the image tiny and fast to build, lets the summarizer
 ├── main.py                        # CLI orchestrator
 ├── app.py                         # Gradio + MCP server
 ├── pipeline/
-│   ├── __init__.py               # announce() helper shared by main.py and app.py
+│   ├── __init__.py               # announce() helpers shared by main.py and app.py
 │   ├── step1_convert.py
 │   ├── step2_cleanup.py
 │   ├── step3_mapping.py          # exports detect_generic_speakers + apply_speaker_mapping
 │   ├── step4_extraction.py
-│   └── step5_formatter.py
+│   ├── step5_formatter.py
+│   └── pdf_export.py             # md_to_pdf() — post-pipeline opt-in PDF export (M11)
+├── contexts/                      # architecture specs & design-decision history
+│   ├── gradio_app.md             # M0–M10 spec (v1 shipped 2026-04-22)
+│   └── pdf_export.md             # M11 shipped / M12 spec'd (PDF feature)
 ├── assets/
 │   └── refresh.svg               # web UI refresh icon (FontAwesome)
 ├── transcripts/                  # sample inputs (gitignored by default)
@@ -739,6 +805,18 @@ The Web UI's **Stop** button cancels the generator immediately — but because e
 ### Process-shutdown hooks
 
 Every `(host, model)` pair ever loaded during the process's lifetime is tracked in a module-level set. An `atexit` handler walks it on normal Python exit (covers Ctrl-C, since SIGINT → KeyboardInterrupt → atexit). A `SIGTERM` handler does the same for `docker stop` and kill-term. This is not bulletproof against `kill -9`, but it's clean enough for rolling deploys on ziggie.
+
+### PDF export is opt-in everywhere
+
+The markdown path is the primary output contract at every entry point. PDF never runs speculatively. The CLI only generates it when `--pdf` is passed. The Web UI only generates it when the user explicitly clicks the PDF radio. The MCP tool doesn't generate it at all. Preserves every v1 behaviour exactly for callers who don't care about PDF — their scripts, their pipelines, their MCP clients all see zero change.
+
+### Why `markdown-pdf` over WeasyPrint / Playwright
+
+The two obvious alternatives (`md2pdf` with WeasyPrint, `markdown-html-pdf` with Playwright) both produce prettier PDFs via full browser-engine rendering. They also both require serious system dependencies: WeasyPrint needs Cairo / Pango / GDK-PixBuf / libffi; Playwright needs a ~300 MB Chromium binary. On a CPU-only ~200 MB Docker image, neither made sense for a feature where most users will either not use PDF at all or be happy with plain whitepaper-style typography. `markdown-pdf` is pure Python via PyMuPDF, renders GFM tables correctly (critical — our Action Items table comes out of step 5 as a GFM table), and adds ~15 MB to the image. If a future iteration genuinely needs brand fonts or fancy CSS Paged Media, we can revisit — but today the trade-off is on the right side.
+
+### PDF not exposed via MCP
+
+`summarize_transcript` returns a string of markdown. Every existing MCP client (Claude Desktop, Open WebUI, MCP Inspector, Cursor) is coded against that contract; flipping it to bytes would break all of them silently. Output format is a consumer concern, not a tool concern — CLI callers pass `--pdf`, UI users click the radio, and external HTTP callers will use the planned `markdown_to_pdf` endpoint (M12.2). If MCP-native PDF ever becomes a real ask, the future path is a backward-compatible `output_format="pdf"` parameter. Parked, not committed.
 
 ---
 
